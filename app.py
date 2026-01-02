@@ -58,11 +58,11 @@ if grain_type in ["🟣 Purple grains", "⚪ White grains"]:
 # ============================================================
 CHECKPOINT_MAP = {
     "🔴 Red grains": {
-        "ckpt": "resnet50_6d_C_dualhead_onlyDiffusion.pth",
+        "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion.pth",
         "sd_max": 4.74
     },
     "⚫ Black grains": {
-        "ckpt": "resnet50_6d_C_dualhead_onlyDiffusion_BLACKGRAINS.pth",
+        "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion_BLACKGRAINS.pth",
         "sd_max": 6.428001245
     }
 }
