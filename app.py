@@ -23,6 +23,24 @@ st.set_page_config(
     layout="centered"
 )
 
+st.markdown(
+    """
+    <style>
+    /* Hide file list inside file uploader */
+    div[data-testid="stFileUploader"] ul {
+        display: none;
+    }
+
+    /* Hide pagination text (page 1 of 2) */
+    div[data-testid="stFileUploader"] > div > div:last-child {
+        display: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # ============================================================
 # HEADER
 # ============================================================
@@ -161,16 +179,25 @@ uploaded = st.file_uploader(
 )
 
 if uploaded:
+    st.markdown("### 📂 Uploaded files")
+
+    for i, file in enumerate(uploaded, start=1):
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            img = Image.open(file)
+            st.image(img, width=80)
+        with col2:
+            st.markdown(f"**{i}. {file.name}**")
+st.divider()
+
+if uploaded:
     if len(uploaded) != 6:
         st.error("❌ Exactly 6 images are required.")
         st.stop()
 
     images = [Image.open(f) for f in uploaded]
 
-    st.markdown("**Uploaded Images**")
-    st.image(images, width=150)
-
-    st.divider()
+    
 
     # ========================================================
     # STITCHED GRID
@@ -195,14 +222,119 @@ if uploaded:
     # ========================================================
     # RESULTS
     # ========================================================
-    st.markdown("### 📊 Predicted Coating Metrics")
+    st.markdown("### 📊 Predicted Coating Values")
 
+    st.markdown(
+        """
+        <style>
+        .metric-card {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        .metric-title {
+            font-size: 30px;
+            font-weight: 600;
+            color: #555;
+        }
+        .metric-value {
+            font-size: 30px;
+            font-weight: 600;
+            color: #111;
+            margin-top: 8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+    "<p style='font-size:28px; font-weight:600;'>"
+    "The R, G, B values of the displayed image:"
+    "</p>",
+    unsafe_allow_html=True
+    )
+
+
+    # RGB ROW
     c1, c2, c3 = st.columns(3)
-    c1.metric("R", f"{rgb[0]:.1f}")
-    c2.metric("G", f"{rgb[1]:.1f}")
-    c3.metric("B", f"{rgb[2]:.1f}")
+    with c1:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">R</div>
+                <div class="metric-value">{rgb[0]:.1f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
+    with c2:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">G</div>
+                <div class="metric-value">{rgb[1]:.1f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c3:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">B</div>
+                <div class="metric-value">{rgb[2]:.1f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown(
+    "<p style='font-size:28px; font-weight:600; margin-top:20px;'>"
+    "The SDs of R, G, B in displayed image:"
+    "</p>",
+    unsafe_allow_html=True
+    )
+
+
+    # SD ROW
     c4, c5, c6 = st.columns(3)
-    c4.metric("SD_R", f"{sd[0]:.3f}")
-    c5.metric("SD_G", f"{sd[1]:.3f}")
-    c6.metric("SD_B", f"{sd[2]:.3f}")
+    with c4:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">SD_R</div>
+                <div class="metric-value">{sd[0]:.3f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c5:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">SD_G</div>
+                <div class="metric-value">{sd[1]:.3f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c6:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-title">SD_B</div>
+                <div class="metric-value">{sd[2]:.3f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
