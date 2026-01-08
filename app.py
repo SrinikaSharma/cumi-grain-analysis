@@ -252,7 +252,7 @@ if uploaded:
 
     st.markdown(
     "<p style='font-size:28px; font-weight:600;'>"
-    "The R, G, B values of the displayed image:"
+    "R, G, B values of the displayed image:"
     "</p>",
     unsafe_allow_html=True
     )
@@ -297,7 +297,7 @@ if uploaded:
 
     st.markdown(
     "<p style='font-size:28px; font-weight:600; margin-top:20px;'>"
-    "The SDs of R, G, B in displayed image:"
+    "Standard Deviations of R, G, B in displayed image:"
     "</p>",
     unsafe_allow_html=True
     )
