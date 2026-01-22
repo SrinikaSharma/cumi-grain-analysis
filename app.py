@@ -67,9 +67,10 @@ grain_type = st.radio(
     horizontal=True
 )
 
-if grain_type in ["🟣 Purple grains", "⚪ White grains"]:
+if grain_type in ["⚪ White grains"]:
     st.info("🚧 Model for this grain type is under development. Coming soon.")
     st.stop()
+
 
 # ============================================================
 # CHECKPOINT + SD_MAX ROUTING
@@ -82,14 +83,19 @@ CHECKPOINT_MAP = {
     "⚫ Black grains": {
         "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion_BLACKGRAINS.pth",
         "sd_max": 6.428001245
+    },
+    "🟣 Purple grains": {
+        "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion_PURPLEGRAINS.pth",
+        "sd_max": 13.02   
     }
 }
+
 
 CHECKPOINT_PATH = CHECKPOINT_MAP[grain_type]["ckpt"]
 sd_max = CHECKPOINT_MAP[grain_type]["sd_max"]
 
 st.success(
-    f"✔ Loaded model for **{grain_type.replace('🔴 ', '').replace('⚫ ', '')}** "
+    f"✔ Loaded model for **{grain_type.replace('🔴 ', '').replace('⚫ ', '').replace('🟣 ', '')}** "
 )
 
 st.divider()
