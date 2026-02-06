@@ -15,6 +15,9 @@ from PIL import Image
 import numpy as np
 import io
 from datetime import datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -246,7 +249,9 @@ if len(st.session_state.uploaded_images) == 6:
 
         c.setFont("Helvetica", 12)
         c.drawCentredString(w/2, h-65, f"Grain type: {grain_type.split(' ',1)[1]}")
-        c.drawCentredString(w/2, h-85, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        #c.drawCentredString(w/2, h-85, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        ist_time = datetime.now(ZoneInfo("Asia/Kolkata"))
+        c.drawCentredString(w/2, h-85, ist_time.strftime("%Y-%m-%d %H:%M:%S IST"))
 
         img = ImageReader(grid_image)
         c.drawImage(img, 50, h-420, width=500, height=300, preserveAspectRatio=True)
