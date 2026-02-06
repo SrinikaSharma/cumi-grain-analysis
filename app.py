@@ -13,6 +13,18 @@ import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
 import numpy as np
+import io
+from datetime import datetime
+
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+
+# ============================================================
+# SESSION STATE INIT
+# ============================================================
+if "uploaded_images" not in st.session_state:
+    st.session_state.uploaded_images = []
 
 # ============================================================
 # PAGE CONFIG
@@ -23,23 +35,18 @@ st.set_page_config(
     layout="centered"
 )
 
+# ============================================================
+# CSS FIXES
+# ============================================================
 st.markdown(
     """
     <style>
-    /* Hide file list inside file uploader */
-    div[data-testid="stFileUploader"] ul {
-        display: none;
-    }
-
-    /* Hide pagination text (page 1 of 2) */
-    div[data-testid="stFileUploader"] > div > div:last-child {
-        display: none;
-    }
+    div[data-testid="stFileUploader"] ul { display: none; }
+    div[data-testid="stFileUploader"] > div > div:last-child { display: none; }
     </style>
     """,
     unsafe_allow_html=True
 )
-
 
 # ============================================================
 # HEADER
@@ -67,10 +74,8 @@ grain_type = st.radio(
     horizontal=True
 )
 
-
-
 # ============================================================
-# CHECKPOINT + SD_MAX ROUTING
+# CHECKPOINT + SD_MAX
 # ============================================================
 CHECKPOINT_MAP = {
     "🔴 Red grains": {
@@ -83,7 +88,7 @@ CHECKPOINT_MAP = {
     },
     "🟣 Purple grains": {
         "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion_PURPLEGRAINS.pth",
-        "sd_max": 13.02   
+        "sd_max": 13.02
     },
     "⚪ White grains": {
         "ckpt": "checkpoints/resnet50_6d_C_dualhead_onlyDiffusion_WHITEGRAINS.pth",
@@ -91,79 +96,60 @@ CHECKPOINT_MAP = {
     }
 }
 
-
 CHECKPOINT_PATH = CHECKPOINT_MAP[grain_type]["ckpt"]
 sd_max = CHECKPOINT_MAP[grain_type]["sd_max"]
 
-st.success(
-    f"✔ Loaded model for **{grain_type.replace('🔴 ', '').replace('⚫ ', '').replace('🟣 ', '').replace('⚪ ', '')}** "
-)
-
+st.success(f"✔ Loaded model for **{grain_type.split(' ',1)[1]}**")
 st.divider()
 
 # ============================================================
 # IMAGE GRID FUNCTION
 # ============================================================
 def make_image_grid_pil(images):
-    assert len(images) == 6, "Exactly 6 images are required"
-
-    grid_width, grid_height = 900, 600
-    cols, rows = 3, 2
-    cell_w, cell_h = grid_width // cols, grid_height // rows
-
-    grid = Image.new("RGB", (grid_width, grid_height))
+    grid = Image.new("RGB", (900, 600))
     for i, img in enumerate(images):
-        img = img.convert("RGB").resize((cell_w, cell_h), Image.BILINEAR)
-        grid.paste(img, ((i % cols) * cell_w, (i // cols) * cell_h))
-
+        img = img.convert("RGB").resize((300, 300), Image.BILINEAR)
+        grid.paste(img, ((i % 3) * 300, (i // 3) * 300))
     return grid
 
 # ============================================================
-# MODEL DEFINITION (MATCHES CHECKPOINT)
+# MODEL
 # ============================================================
 class ResNetDualHead(nn.Module):
-    def __init__(self, pretrained=False):
+    def __init__(self):
         super().__init__()
-        self.backbone = models.resnet50(
-            weights=models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None
-        )
-        in_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Identity()
+        backbone = models.resnet50(weights=None)
+        backbone.fc = nn.Identity()
+        self.backbone = backbone
 
         self.rgb_head = nn.Sequential(
-            nn.Linear(in_features, 256),
+            nn.Linear(2048, 256),
             nn.ReLU(),
             nn.Linear(256, 3)
         )
 
         self.sd_head = nn.Sequential(
-            nn.Linear(in_features, 256),
+            nn.Linear(2048, 256),
             nn.ReLU(),
             nn.Linear(256, 3)
         )
 
     def forward(self, x):
-        feats = self.backbone(x)
-        rgb = self.rgb_head(feats)
-        sd = self.sd_head(feats)
-        return torch.cat([rgb, sd], dim=1)
+        x = self.backbone(x)
+        return torch.cat([self.rgb_head(x), self.sd_head(x)], dim=1)
 
-# ============================================================
-# LOAD MODEL (CACHED, CHECKPOINT-AWARE)
-# ============================================================
 @st.cache_resource
-def load_model(checkpoint_path):
+def load_model(path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ResNetDualHead(pretrained=False).to(device)
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict)
+    model = ResNetDualHead().to(device)
+    model.load_state_dict(torch.load(path, map_location=device))
     model.eval()
     return model, device
 
 model, device = load_model(CHECKPOINT_PATH)
 
 # ============================================================
-# TRANSFORMS
+# TRANSFORM
 # ============================================================
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -175,173 +161,125 @@ transform = transforms.Compose([
 ])
 
 # ============================================================
-# STEP 1 — IMAGE UPLOAD
+# STEP 1 — UPLOAD WITH REMOVE OPTION
 # ============================================================
 st.markdown("### 📤 Step 1: Upload Exactly 6 Images")
 
-uploaded = st.file_uploader(
-    "Upload 6 grain images",
-    type=["png", "jpg", "jpeg"],
-    accept_multiple_files=True
-)
+remaining = 6 - len(st.session_state.uploaded_images)
 
-if uploaded:
-    st.markdown("### 📂 Uploaded files")
+if remaining > 0:
+    new_files = st.file_uploader(
+        f"Upload up to {remaining} image(s)",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"uploader_{len(st.session_state.uploaded_images)}"
+    )
 
-    for i, file in enumerate(uploaded, start=1):
-        col1, col2 = st.columns([1, 4])
+    if new_files:
+        for f in new_files:
+            if len(st.session_state.uploaded_images) < 6:
+                st.session_state.uploaded_images.append(f)
+            else:
+                st.warning("⚠️ You cannot upload more than 6 images.")
+                break
+
+# ============================================================
+# DISPLAY UPLOADED FILES WITH ❌
+# ============================================================
+if st.session_state.uploaded_images:
+    st.markdown("### 📂 Uploaded Files")
+
+    for i, f in enumerate(st.session_state.uploaded_images):
+        col1, col2, col3 = st.columns([1, 4, 1])
+
         with col1:
-            img = Image.open(file)
-            st.image(img, width=80)
+            st.image(Image.open(f), width=80)
+
         with col2:
-            st.markdown(f"**{i}. {file.name}**")
-st.divider()
+            st.markdown(f"**{i+1}. {f.name}**")
 
-if uploaded:
-    if len(uploaded) != 6:
-        st.error("❌ Exactly 6 images are required.")
-        st.stop()
+        with col3:
+            if st.button("❌", key=f"remove_{i}"):
+                st.session_state.uploaded_images.pop(i)
+                st.rerun()
 
-    images = [Image.open(f) for f in uploaded]
+# ============================================================
+# INFERENCE (ONLY WHEN EXACTLY 6 IMAGES)
+# ============================================================
+if len(st.session_state.uploaded_images) == 6:
+    images = [Image.open(f) for f in st.session_state.uploaded_images]
 
-    
-
-    # ========================================================
-    # STITCHED GRID
-    # ========================================================
-    st.markdown("### 🧩 Stitched Input Grid (900 × 600)")
     grid_image = make_image_grid_pil(images)
+    st.divider()
+    st.markdown("### 🧩 Stitched Input Grid")
     st.image(grid_image, width=900)
 
-    # ========================================================
-    # INFERENCE
-    # ========================================================
     with st.spinner("Running inference..."):
         x = transform(grid_image).unsqueeze(0).to(device)
         with torch.no_grad():
             pred = model(x).cpu().numpy()[0]
 
-    rgb = np.clip(pred[:3] * 255.0, 0.0, 255.0)
-    sd = np.clip(pred[3:] * sd_max, 0.0, sd_max)
+    rgb = np.clip(pred[:3] * 255.0, 0, 255)
+    sd  = np.clip(pred[3:] * sd_max, 0, sd_max)
 
     st.divider()
-
-    # ========================================================
-    # RESULTS
-    # ========================================================
     st.markdown("### 📊 Predicted Coating Values")
 
-    st.markdown(
-        """
-        <style>
-        .metric-card {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        }
-        .metric-title {
-            font-size: 30px;
-            font-weight: 600;
-            color: #555;
-        }
-        .metric-value {
-            font-size: 30px;
-            font-weight: 600;
-            color: #111;
-            margin-top: 8px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
+    cols = st.columns(3)
+    for c, v, l in zip(cols, rgb, ["R", "G", "B"]):
+        c.markdown(f"<h2>{l}</h2><h1>{v:.1f}</h1>", unsafe_allow_html=True)
+
+    cols = st.columns(3)
+    for c, v, l in zip(cols, sd, ["SD_R", "SD_G", "SD_B"]):
+        c.markdown(f"<h2>{l}</h2><h1>{v:.3f}</h1>", unsafe_allow_html=True)
+
+    # ========================================================
+    # PDF REPORT
+    # ========================================================
+    def create_pdf():
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        w, h = A4
+
+        c.setFont("Helvetica-Bold", 18)
+        c.drawCentredString(w/2, h-40, "CV Grain Analysis Report")
+
+        c.setFont("Helvetica", 12)
+        c.drawCentredString(w/2, h-65, f"Grain type: {grain_type.split(' ',1)[1]}")
+        c.drawCentredString(w/2, h-85, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        img = ImageReader(grid_image)
+        c.drawImage(img, 50, h-420, width=500, height=300, preserveAspectRatio=True)
+
+        y = h - 460
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(50, y, "Predicted Values")
+        y -= 30
+
+        rows = [
+            ("R", f"{rgb[0]:.2f}"),
+            ("G", f"{rgb[1]:.2f}"),
+            ("B", f"{rgb[2]:.2f}"),
+            ("SD_R", f"{sd[0]:.3f}"),
+            ("SD_G", f"{sd[1]:.3f}"),
+            ("SD_B", f"{sd[2]:.3f}")
+        ]
+
+        c.setFont("Helvetica", 12)
+        for k, v in rows:
+            c.drawString(70, y, k)
+            c.drawString(200, y, v)
+            y -= 22
+
+        c.showPage()
+        c.save()
+        buf.seek(0)
+        return buf
+
+    st.divider()
+    st.download_button(
+        "📄 Download PDF Report",
+        data=create_pdf(),
+        file_name=f"grain_analysis_{grain_type.split()[1].lower()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        mime="application/pdf"
     )
-
-    st.markdown(
-    "<p style='font-size:28px; font-weight:600;'>"
-    "R, G, B values of the displayed image:"
-    "</p>",
-    unsafe_allow_html=True
-    )
-
-
-    # RGB ROW
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">R</div>
-                <div class="metric-value">{rgb[0]:.1f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c2:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">G</div>
-                <div class="metric-value">{rgb[1]:.1f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c3:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">B</div>
-                <div class="metric-value">{rgb[2]:.1f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown(
-    "<p style='font-size:28px; font-weight:600; margin-top:20px;'>"
-    "Standard Deviations of R, G, B in displayed image:"
-    "</p>",
-    unsafe_allow_html=True
-    )
-
-
-    # SD ROW
-    c4, c5, c6 = st.columns(3)
-    with c4:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">SD_R</div>
-                <div class="metric-value">{sd[0]:.3f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c5:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">SD_G</div>
-                <div class="metric-value">{sd[1]:.3f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c6:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">SD_B</div>
-                <div class="metric-value">{sd[2]:.3f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
